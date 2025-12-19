@@ -207,6 +207,6 @@ local function readTag(rawTag)
 end
 
 return {
-    readFromNBT,
-    readTag
+    ["readFromNBT"] = readFromNBT,
+    ["readTag"] = readTag
 }
