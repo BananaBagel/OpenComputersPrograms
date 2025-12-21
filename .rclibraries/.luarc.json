@@ -4,5 +4,6 @@
         ".rclibraries/"
     ],
     "runtime.version": "Lua 5.3",
-    "hint.enable": false
+    "hint.enable": false,
+    "language.fixIndent": true
 }

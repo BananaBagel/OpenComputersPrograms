@@ -1,4 +1,5 @@
----
+-- Adapted by BananaBagel
+-- Licensed under the MIT license
 
 local math = math
 local computer = require("computer")
@@ -182,7 +183,7 @@ data.readFun = {
     [12] = data.readLongArray
 }
 
---- Reads NBT data from raw (decompressed) data
+--- Reads NBT data from decompressed data
 --- @param rawdata string
 --- @return table
 local function readFromNBT(rawdata)
@@ -192,10 +193,12 @@ local function readFromNBT(rawdata)
     return data:readCompound()[""]
 end
 
---- Reads a raw NBT tag, decompressing if needed
+--- Reads a raw tag object, decompressing if needed
 --- @param rawTag string
 --- @return table
 local function readTag(rawTag)
+    -- check if tag is empty or nil
+    if rawTag == nil or rawTag == "" or type(rawTag) ~= "string" then return {} end
     -- try to decompress, if needed
     local inflatedRawTag
     local id1, id2 = rawTag:byte(1, 2)
@@ -207,6 +210,6 @@ local function readTag(rawTag)
 end
 
 return {
-    ["readFromNBT"] = readFromNBT,
-    ["readTag"] = readTag
+    parse = readTag,
+    readTag = readTag
 }
