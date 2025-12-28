@@ -132,10 +132,6 @@ local function readLineAt(x, y, maxlen, bg, fg, default)
     local event = require("event")
     local keyboard_mod = require("keyboard")
     local keys = keyboard_mod.keys
-    local backspace_code = keys.backspace or 0x0E
-    local enter_code = keys.enter or 0x1C
-    local left_code = keys.left or 0xCB
-    local right_code = keys.right or 0xCD
 
     local buf = {}
     for i = 1, unicode.len(default) do table.insert(buf, unicode.sub(default, i, i)) end
@@ -172,28 +168,53 @@ local function readLineAt(x, y, maxlen, bg, fg, default)
         if not n then break end
     end
 
+    local _nonText = {
+        0xC8, 0xD0, 0xCB, 0xCD, 0xC7, 0xCF, 0xC9, 0xD1, 0xD2, 0xD3, 0x1C, 0x9C,
+        0x0E, 0x0F, 0x39, 0xC5, 0x3A, 0x45, 0x46, 0x2A, 0x36, 0x1D, 0x9D, 0x38,
+        0xB8, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x57,
+        0x58, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x71, 0x37, 0xB5, 0x4A, 0x4E,
+        0x53, 0xB3, 0x9C, 0x8D, 0x0D, 0x0C, 0x29, 0x2B, 0x1A, 0x1B, 0x27, 0x28,
+        0x33, 0x34, 0x35, 0x2F,
+    }
+    local _nonTextSet = {}
+    for _, v in ipairs(_nonText) do if v then _nonTextSet[v] = true end end
+    local function isTextKey(code)
+        return not _nonTextSet[code]
+    end
+
     draw()
     while true do
         local ev, a1, a2, a3 = event.pullFiltered(nil, function(n, ...) return n == "key_down" end)
         local charCode = a2
         local code = a3
 
-        if code == enter_code then
+        if code == keys.enter or code == keys.numpadenter then
             break
-        elseif code == backspace_code then
+        elseif code == keys.backspace then
             if pos > 1 then
                 table.remove(buf, pos - 1)
                 pos = pos - 1
             end
             draw()
-        elseif code == left_code then
+        elseif code == keys.delete then
+            if pos <= #buf then
+                table.remove(buf, pos)
+            end
+            draw()
+        elseif code == keys.left then
             pos = math.max(1, pos - 1)
             draw()
-        elseif code == right_code then
+        elseif code == keys.right then
             pos = math.min(#buf + 1, pos + 1)
             draw()
+        elseif code == keys.home then
+            pos = 1
+            draw()
+        elseif code == keys["end"] then
+            pos = #buf + 1
+            draw()
         else
-            if type(charCode) == "number" and charCode >= 32 then
+            if type(charCode) == "number" and charCode >= 32 and isTextKey(code) then
                 local ch = unicode.char(charCode)
                 if unicode.len(table.concat(buf)) < maxlen then
                     table.insert(buf, pos, ch)
