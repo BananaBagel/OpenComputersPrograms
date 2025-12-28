@@ -361,8 +361,21 @@ function whiptail.menu(title, prompt, choices, opts)
     local sw, sh = getResolution()
     if desiredH > sh then error("menu: too many options for screen height") end
     local info = prep(title, prompt, opts, 60, desiredH)
+    -- render choices with wrapping so long entries don't overflow
+    local curY = info.innerY + #info.lines
+    local maxY = info.innerY + info.innerH - 1
     for i, v in ipairs(choices) do
-        gpu.set(info.innerX, info.innerY + #info.lines + i, string.format("%d) %s", i, v))
+        if curY > maxY then break end
+        local idxStr = tostring(i)
+        local idxLen = unicode.len(idxStr)
+        local nameMax = math.max(0, info.innerW - idxLen - 3) -- space for ") " and padding
+        local lines = wrapText(v, nameMax)
+        for li, line in ipairs(lines) do
+            if curY > maxY then break end
+            local prefix = (li == 1) and (idxStr .. ") ") or "   "
+            gpu.set(info.innerX, curY, prefix .. line)
+            curY = curY + 1
+        end
     end
     gpu.set(info.innerX, info.y + info.h - 3, "Enter number: ")
     local readX = info.innerX + 14
@@ -411,45 +424,62 @@ function whiptail.navmenu(title, prompt, choices, opts)
     local top = 1
 
     local function render()
-        local last = math.min(#choices, top + visible - 1)
-        for i = top, last do
-            local displayRow = i - top + 1
-            local ly = innerY + #lines + displayRow
+        local promptLines = #lines
+        local displayRow = 0
+        local maxRow = visible
+        local stop = false
+        for i = top, #choices do
+            if stop then break end
             local idxStr = tostring(i)
             local idxLen = unicode.len(idxStr)
             local nameMax = math.max(0, innerW - idxLen - 1)
-            local name = choices[i]
-            if unicode.len(name) > nameMax then
-                name = unicode.sub(name, 1, math.max(0, nameMax - 1)) .. "…"
+            local whole = choices[i]
+            local renderLines = {}
+            if i == selected then
+                renderLines = wrapText(whole, nameMax)
+            else
+                local name = whole
+                if unicode.len(name) > nameMax then
+                    name = unicode.sub(name, 1, math.max(0, nameMax - 1)) .. "…"
+                end
+                renderLines = { name }
             end
 
-            if depth and depth > 1 then
-                if i == selected then
-                    gpu.setBackground(sel_bg)
-                    gpu.fill(innerX, ly, innerW, 1, " ")
-                    gpu.setForeground(sel_fg)
-                    gpu.set(innerX, ly, name)
-                    gpu.set(innerX + innerW - idxLen, ly, idxStr)
-                    gpu.setForeground(fg)
-                    gpu.setBackground(bg)
-                else
-                    gpu.setBackground(bg)
-                    gpu.fill(innerX, ly, innerW, 1, " ")
-                    gpu.setForeground(fg)
-                    gpu.set(innerX, ly, name)
-                    gpu.set(innerX + innerW - idxLen, ly, idxStr)
+            for li, textLine in ipairs(renderLines) do
+                if displayRow >= maxRow then
+                    stop = true
+                    break
                 end
-            else
-                if i == selected then
-                    local s = "> " .. name
-                    s = s .. string.rep(" ", math.max(0, innerW - unicode.len(s) - idxLen - 1))
-                    gpu.set(innerX, ly, s)
-                    gpu.set(innerX + innerW - idxLen, ly, idxStr)
+                displayRow = displayRow + 1
+                local ly = innerY + promptLines + displayRow
+                if depth and depth > 1 then
+                    if i == selected then
+                        gpu.setBackground(sel_bg)
+                        gpu.fill(innerX, ly, innerW, 1, " ")
+                        gpu.setForeground(sel_fg)
+                        gpu.set(innerX, ly, textLine)
+                        if li == 1 then gpu.set(innerX + innerW - idxLen, ly, idxStr) end
+                        gpu.setForeground(fg)
+                        gpu.setBackground(bg)
+                    else
+                        gpu.setBackground(bg)
+                        gpu.fill(innerX, ly, innerW, 1, " ")
+                        gpu.setForeground(fg)
+                        gpu.set(innerX, ly, textLine)
+                        if li == 1 then gpu.set(innerX + innerW - idxLen, ly, idxStr) end
+                    end
                 else
-                    local s = "  " .. name
-                    s = s .. string.rep(" ", math.max(0, innerW - unicode.len(s) - idxLen - 1))
-                    gpu.set(innerX, ly, s)
-                    gpu.set(innerX + innerW - idxLen, ly, idxStr)
+                    if i == selected then
+                        local s = "> " .. textLine
+                        s = s .. string.rep(" ", math.max(0, innerW - unicode.len(s) - (li == 1 and idxLen or 0) - 1))
+                        gpu.set(innerX, ly, s)
+                        if li == 1 then gpu.set(innerX + innerW - idxLen, ly, idxStr) end
+                    else
+                        local s = "  " .. textLine
+                        s = s .. string.rep(" ", math.max(0, innerW - unicode.len(s) - idxLen - 1))
+                        gpu.set(innerX, ly, s)
+                        if li == 1 then gpu.set(innerX + innerW - idxLen, ly, idxStr) end
+                    end
                 end
             end
         end
