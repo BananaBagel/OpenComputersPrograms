@@ -16,7 +16,7 @@ local gpu = component.gpu
 ---@field maxLines number? -- max visual lines for inputbox before truncating
 ---@field maxChars number? -- maximum number of characters allowed in inputbox
 ---@field input_bg number? -- input area background (color mode only)
----@field forceTextMode boolean? -- if true, force ASCII/text mode rendering
+---@field forceTextMode boolean? -- if true, text mode rendering - no depth > 1 fg/bg
 
 ---@class Whiptail
 ---@field _VERSION string
@@ -480,9 +480,8 @@ function whiptail.yesno(title, text, opts)
     gpu.set(info.innerX, info.y + info.h - 3, "[Y]es / [N]o : ")
     local readX = info.innerX + 16
     local readY = math.min(info.sh - 1, info.y + info.h - 3)
-    gpu.setBackground(info.bg)
+    -- accept a single keypress (Y/N or Enter/Esc) with no input box
     gpu.setForeground(info.fg)
-    -- accept a single keypress (Y/N or Enter/Esc)
     local event = require("event")
     local keyboard_mod = require("keyboard")
     local keys = keyboard_mod.keys
@@ -502,8 +501,6 @@ function whiptail.yesno(title, text, opts)
         end
         if type(charCode) == "number" and charCode >= 32 then
             local c = unicode.char(charCode):lower()
-            -- echo the character
-            gpu.set(readX, readY, c)
             if c == "y" then
                 ok = true
                 break
@@ -513,7 +510,7 @@ function whiptail.yesno(title, text, opts)
                 break
             end
         elseif code == keys.enter or code == keys.numpadenter then
-            ok = false
+            ok = true
             break
         end
     end
@@ -583,7 +580,9 @@ function whiptail.menu(title, prompt, choices, opts)
     gpu.set(info.innerX, info.y + info.h - 3, "Enter number: ")
     local readX = info.innerX + 14
     local readY = math.min(info.sh - 1, info.y + info.h - 3)
-    gpu.setBackground(info.bg)
+    local depth = 1
+    if not opts.forceTextMode and gpu.getDepth then depth = gpu.getDepth() end
+    if not opts.forceTextMode and depth and depth > 1 then gpu.setBackground(info.bg) end
     gpu.setForeground(info.fg)
     local ans = readLineAt(readX, readY, 6, info.bg, info.fg, "", 1, opts.forceTextMode, 6)
     local idx = tonumber(ans)
@@ -602,7 +601,7 @@ end
 function whiptail.navmenu(title, prompt, choices, opts)
     opts = opts or {}
     local w = opts.width or 60
-    local h = opts.height or (6 + #choices)
+    local h = opts.height or (4 + #choices)
     local info = prep(title, prompt, opts, w, h)
     local bg = info.bg or 0x000000
     local fg = info.fg or 0xFFFFFF
