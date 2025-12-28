@@ -119,6 +119,68 @@ local function drawTextBlock(x, y, w, h, lines)
     end
 end
 
+---Read a single-line input at given coordinates using event loop (avoids io.read scrolling).
+---@param x number
+---@param y number
+---@param maxlen number
+---@param bg number
+---@param fg number
+---@param default string|nil
+---@return string
+local function readLineAt(x, y, maxlen, bg, fg, default)
+    default = default or ""
+    local event = require("event")
+    local keyboard_mod_ok, keyboard_mod = pcall(require, "keyboard")
+    local keys = keyboard_mod_ok and keyboard_mod.keys or {}
+    local backspace_code = keys.backspace or 0x0E
+    local enter_code = keys.enter or 0x1C
+
+    local buf = {}
+    for i = 1, unicode.len(default) do table.insert(buf, unicode.sub(default, i, i)) end
+
+    local function draw()
+        gpu.setBackground(bg)
+        gpu.fill(x, y, maxlen, 1, " ")
+        gpu.setForeground(fg)
+        local s = table.concat(buf)
+        if unicode.len(s) > maxlen then
+            s = unicode.sub(s, 1, maxlen)
+        end
+        gpu.set(x, y, s)
+    end
+
+    draw()
+    while true do
+        local name, a1, a2, a3 = event.pullFiltered(nil, function(n, ...) return n == "key_down" or n == "key" end)
+        local code
+        if type(a3) == "number" then code = a3 end
+        if not code and type(a2) == "number" then code = a2 end
+        if not code and type(a1) == "number" then code = a1 end
+
+        if code then
+            if code == enter_code then
+                break
+            elseif code == backspace_code then
+                if #buf > 0 then table.remove(buf) end
+                draw()
+            else
+                -- printable range: try to use a3/a2 as char code if present
+                local chcode = nil
+                if type(a3) == "number" and a3 >= 32 then chcode = a3 end
+                if not chcode and type(a2) == "number" and a2 >= 32 then chcode = a2 end
+                if chcode then
+                    local ch = unicode.char(chcode)
+                    if unicode.len(table.concat(buf)) < maxlen then
+                        table.insert(buf, ch)
+                    end
+                    draw()
+                end
+            end
+        end
+    end
+    return table.concat(buf)
+end
+
 ---Prepare screen and draw box; returns a table with geometry and wrapped lines.
 ---@param title string
 ---@param text string
@@ -186,8 +248,9 @@ function whiptail.yesno(title, text, opts)
     local info = prep(title, text, opts, 50, 10)
     drawTextBlock(info.innerX, info.innerY, info.innerW, info.innerH, info.lines)
     gpu.set(info.innerX, info.y + info.h - 3, "[Y]es / [N]o : ")
-    term.setCursor(info.innerX + 16, math.min(info.sh - 1, info.y + info.h - 3))
-    local ans = io.read()
+    local readX = info.innerX + 16
+    local readY = math.min(info.sh - 1, info.y + info.h - 3)
+    local ans = readLineAt(readX, readY, 1, info.bg, info.fg, "")
     local ok = false
     if ans and #ans > 0 then
         local c = ans:sub(1, 1):lower()
@@ -206,8 +269,10 @@ function whiptail.inputbox(title, prompt, opts)
     local info = prep(title, prompt, opts, 60, 10)
     drawTextBlock(info.innerX, info.innerY, info.innerW, info.innerH, info.lines)
     gpu.set(info.innerX, info.y + info.h - 3, "Input: ")
-    term.setCursor(info.innerX + 8, math.min(info.sh - 1, info.y + info.h - 3))
-    local res = io.read()
+    local readX = info.innerX + 8
+    local readY = math.min(info.sh - 1, info.y + info.h - 3)
+    local maxlen = math.max(1, info.innerW - 8)
+    local res = readLineAt(readX, readY, maxlen, info.bg, info.fg, opts and opts.default)
     cleanup()
     return res
 end
@@ -227,8 +292,9 @@ function whiptail.menu(title, prompt, choices, opts)
         gpu.set(info.innerX, info.innerY + #info.lines + i, string.format("%d) %s", i, v))
     end
     gpu.set(info.innerX, info.y + info.h - 3, "Enter number: ")
-    term.setCursor(info.innerX + 14, math.min(info.sh - 1, info.y + info.h - 3))
-    local ans = io.read()
+    local readX = info.innerX + 14
+    local readY = math.min(info.sh - 1, info.y + info.h - 3)
+    local ans = readLineAt(readX, readY, 6, info.bg, info.fg, "")
     local idx = tonumber(ans)
     cleanup()
     if idx and choices[idx] then return idx, choices[idx] end
@@ -258,8 +324,8 @@ function whiptail.navmenu(title, prompt, choices, opts)
     local lines = info.lines
 
     local event = require("event")
-    local keyboard_mod = require("keyboard")
-    local keys = keyboard_mod.keys
+    local keyboard_mod_ok, keyboard_mod = pcall(require, "keyboard")
+    local keys = keyboard_mod_ok and keyboard_mod.keys or { up = 0xC8, down = 0xD0, enter = 0x1C, esc = 0x01 }
 
     local selected = math.max(1, opts.selected or 1)
     local depth = 1
@@ -313,7 +379,7 @@ function whiptail.navmenu(title, prompt, choices, opts)
 
     while true do
         local name, a1, a2, a3 = event.pullFiltered(nil,
-            function(n, ...) return n == "key_down" end)
+            function(n, ...) return n == "key_down" or n == "key" or n == "key_up" end)
         local code
         if type(a3) == "number" then code = a3 end
         if not code and type(a2) == "number" then code = a2 end
