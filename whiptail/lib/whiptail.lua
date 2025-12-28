@@ -426,7 +426,11 @@ local function prep(title, text, opts, defaultW, defaultH)
     local x, y = center(w, h)
     local sw, sh = getResolution()
     clear()
-    drawBox(x, y, w, h, title, bg, fg, opts and opts.forceTextMode)
+    -- determine if we should render in text mode: true when forced or GPU depth == 1
+    local depthVal = 1
+    if gpu.getDepth then depthVal = gpu.getDepth() end
+    local textMode = (opts and opts.forceTextMode) or (depthVal <= 1)
+    drawBox(x, y, w, h, title, bg, fg, textMode)
     local innerX = x + 2
     local innerY = y + 1
     local innerW = w - 4
@@ -448,6 +452,7 @@ local function prep(title, text, opts, defaultW, defaultH)
         innerH = innerH,
         lines = lines,
         prefix = prefix,
+        text = textMode,
     }
 end
 
@@ -546,19 +551,17 @@ function whiptail.inputbox(title, prompt, opts)
     gpu.set(info.innerX, info.y + info.h - 3, info.prefix or "Input: ")
     local readX = info.innerX + 8
     local readY = math.min(info.sh - 1, info.y + info.h - 3)
-    -- choose input background: use opts.input_bg only in color mode unless forceTextMode is set
-    local depth = 1
-    if not opts.forceTextMode and gpu.getDepth then depth = gpu.getDepth() end
+    -- choose input background: use opts.input_bg only in color mode
     local inputBg = info.bg
-    if depth and depth > 1 then inputBg = opts.input_bg or info.bg end
-    if not opts.forceTextMode and depth and depth > 1 then
+    if not info.text then
+        inputBg = opts.input_bg or info.bg
         gpu.setBackground(inputBg)
     end
     gpu.setForeground(info.fg)
     local maxlen = math.max(1, info.innerW - 8)
     local maxLines = opts.maxLines or 1
     local maxChars = opts.maxChars
-    local res = readLineAt(readX, readY, maxlen, inputBg, info.fg, opts.default, maxLines, opts.forceTextMode, maxChars)
+    local res = readLineAt(readX, readY, maxlen, inputBg, info.fg, opts.default, maxLines, info.text, maxChars)
     cleanup()
     return res
 end
@@ -596,11 +599,9 @@ function whiptail.menu(title, prompt, choices, opts)
     gpu.set(info.innerX, info.y + info.h - 3, "Enter number: ")
     local readX = info.innerX + 14
     local readY = math.min(info.sh - 1, info.y + info.h - 3)
-    local depth = 1
-    if not opts.forceTextMode and gpu.getDepth then depth = gpu.getDepth() end
-    if not opts.forceTextMode and depth and depth > 1 then gpu.setBackground(info.bg) end
+    if not info.text then gpu.setBackground(info.bg) end
     gpu.setForeground(info.fg)
-    local ans = readLineAt(readX, readY, 6, info.bg, info.fg, "", 1, opts.forceTextMode, 6)
+    local ans = readLineAt(readX, readY, 6, info.bg, info.fg, "", 1, info.text, 6)
     local idx = tonumber(ans)
     cleanup()
     if idx and choices[idx] then return idx, choices[idx] end
@@ -634,8 +635,7 @@ function whiptail.navmenu(title, prompt, choices, opts)
     local keys = keyboard_mod.keys
 
     local selected = math.max(1, opts.selected or 1)
-    local depth = 1
-    if not opts.forceTextMode and gpu.getDepth then depth = gpu.getDepth() end
+    local isText = info.text
     -- determine visible window size (at most innerH, minimum 6 or half of dialog height)
     local visible = math.min(innerH, math.max(6, math.floor(info.h / 2)))
     visible = math.max(1, visible)
@@ -670,7 +670,7 @@ function whiptail.navmenu(title, prompt, choices, opts)
                 end
                 displayRow = displayRow + 1
                 local ly = innerY + promptLines + displayRow
-                if depth and depth > 1 then
+                if not isText then
                     if i == selected then
                         gpu.setBackground(sel_bg)
                         gpu.fill(innerX, ly, innerW, 1, " ")
