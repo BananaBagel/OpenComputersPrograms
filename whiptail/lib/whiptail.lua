@@ -149,11 +149,16 @@ local function readLineAt(x, y, maxlen, bg, fg, default)
         if unicode.len(s) > maxlen then
             s = unicode.sub(s, 1, maxlen)
         end
+        -- write visible text
         gpu.set(x, y, s)
-        -- draw simple block cursor by inverting colors at cursor position
-        local cx = x + math.max(0, math.min(pos - 1, maxlen - 1))
+        -- compute cursor cell (1-based within field)
+        local cursorCell = math.min(pos, maxlen)
+        local cx = x + cursorCell - 1
         local ch = " "
-        if pos <= #buf then ch = unicode.sub(table.concat(buf), pos, pos) end
+        if unicode.len(s) >= cursorCell then
+            ch = unicode.sub(s, cursorCell, cursorCell)
+        end
+        -- draw simple block cursor by inverting colors at cursor position
         gpu.setBackground(fg)
         gpu.setForeground(bg)
         gpu.set(cx, y, ch)
@@ -406,10 +411,9 @@ function whiptail.navmenu(title, prompt, choices, opts)
         end
     end
 
-    -- flush any pending key events so previous presses don't trigger immediate selection
-    while true do
-        local n = event.pull(0)
-        if not n then break end
+    -- small drain loop to discard any leftover key events (helps when keys are held)
+    for i = 1, 5 do
+        local _ = event.pull(0.02)
     end
 
     render()
