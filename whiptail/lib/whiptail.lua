@@ -258,8 +258,8 @@ function whiptail.navmenu(title, prompt, choices, opts)
     local lines = info.lines
 
     local event = require("event")
-    local keyboard_mod_ok, keyboard_mod = pcall(require, "keyboard")
-    local keys = keyboard_mod_ok and keyboard_mod.keys or { up = 0xC8, down = 0xD0, enter = 0x1C, esc = 0x01 }
+    local keyboard_mod = require("keyboard")
+    local keys = keyboard_mod.keys
 
     local selected = math.max(1, opts.selected or 1)
     local depth = 1
@@ -275,25 +275,36 @@ function whiptail.navmenu(title, prompt, choices, opts)
             if unicode.len(name) > nameMax then
                 name = unicode.sub(name, 1, math.max(0, nameMax - 1)) .. "…"
             end
-            if i == selected then
-                if depth and depth > 1 then
+
+            if depth and depth > 1 then
+                if i == selected then
                     gpu.setBackground(sel_bg)
                     gpu.fill(innerX, ly, innerW, 1, " ")
                     gpu.setForeground(sel_fg)
                     gpu.set(innerX, ly, name)
                     gpu.set(innerX + innerW - idxLen, ly, idxStr)
+                    -- restore defaults for next lines
+                    gpu.setForeground(fg)
                     gpu.setBackground(bg)
                 else
+                    gpu.setBackground(bg)
+                    gpu.fill(innerX, ly, innerW, 1, " ")
+                    gpu.setForeground(fg)
+                    gpu.set(innerX, ly, name)
+                    gpu.set(innerX + innerW - idxLen, ly, idxStr)
+                end
+            else
+                if i == selected then
                     local s = "> " .. name
                     s = s .. string.rep(" ", math.max(0, innerW - unicode.len(s) - idxLen - 1))
                     gpu.set(innerX, ly, s)
                     gpu.set(innerX + innerW - idxLen, ly, idxStr)
+                else
+                    local s = "  " .. name
+                    s = s .. string.rep(" ", math.max(0, innerW - unicode.len(s) - idxLen - 1))
+                    gpu.set(innerX, ly, s)
+                    gpu.set(innerX + innerW - idxLen, ly, idxStr)
                 end
-            else
-                local s = "  " .. name
-                s = s .. string.rep(" ", math.max(0, innerW - unicode.len(s) - idxLen - 1))
-                gpu.set(innerX, ly, s)
-                gpu.set(innerX + innerW - idxLen, ly, idxStr)
             end
         end
     end
@@ -302,41 +313,25 @@ function whiptail.navmenu(title, prompt, choices, opts)
 
     while true do
         local name, a1, a2, a3 = event.pullFiltered(nil,
-            function(n, ...) return n == "key_down" or n == "key" or n == "key_up" end)
+            function(n, ...) return n == "key_down" end)
         local code
         if type(a3) == "number" then code = a3 end
         if not code and type(a2) == "number" then code = a2 end
         if not code and type(a1) == "number" then code = a1 end
 
         if code then
-            if keyboard_mod_ok then
-                if code == keys.up then
-                    selected = math.max(1, selected - 1)
-                    render()
-                elseif code == keys.down then
-                    selected = math.min(#choices, selected + 1)
-                    render()
-                elseif code == keys.enter then
-                    cleanup()
-                    return selected, choices[selected]
-                elseif code == (keys.esc or 0x01) then
-                    cleanup()
-                    return nil
-                end
-            else
-                if code == 0xC8 then
-                    selected = math.max(1, selected - 1)
-                    render()
-                elseif code == 0xD0 then
-                    selected = math.min(#choices, selected + 1)
-                    render()
-                elseif code == 0x1C then
-                    cleanup()
-                    return selected, choices[selected]
-                elseif code == 0x01 then
-                    cleanup()
-                    return nil
-                end
+            if code == keys.up then
+                selected = math.max(1, selected - 1)
+                render()
+            elseif code == keys.down then
+                selected = math.min(#choices, selected + 1)
+                render()
+            elseif code == keys.enter then
+                cleanup()
+                return selected, choices[selected]
+            elseif code == (keys.esc or 0x01) then
+                cleanup()
+                return nil
             end
         else
             if a2 == 13 or a3 == 13 then
