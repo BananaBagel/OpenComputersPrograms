@@ -4,6 +4,17 @@ local unicode = require("unicode")
 
 local gpu = component.gpu
 
+---@class opts
+---@field width number?
+---@field height number?
+---@field bg number?
+---@field fg number?
+---@field sel_bg number?
+---@field sel_fg number?
+---@field default string?
+---@field selected number?
+---@field prefix string?
+
 ---@class Whiptail
 ---@field _VERSION string
 local whiptail = {}
@@ -168,13 +179,14 @@ local function readLineAt(x, y, maxlen, bg, fg, default)
         if not n then break end
     end
 
+    -- keep only true non-text control/navigation/modifier keys; allow punctuation and numpad operators
     local _nonText = {
-        0xC8, 0xD0, 0xCB, 0xCD, 0xC7, 0xCF, 0xC9, 0xD1, 0xD2, 0xD3, 0x1C, 0x9C,
-        0x0E, 0x0F, 0x39, 0xC5, 0x3A, 0x45, 0x46, 0x2A, 0x36, 0x1D, 0x9D, 0x38,
-        0xB8, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, 0x57,
-        0x58, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x71, 0x37, 0xB5, 0x4A, 0x4E,
-        0x53, 0xB3, 0x9C, 0x8D, 0x0D, 0x0C, 0x29, 0x2B, 0x1A, 0x1B, 0x27, 0x28,
-        0x33, 0x34, 0x35, 0x2F,
+        0xC8, 0xD0, 0xCB, 0xCD, 0xC7, 0xCF, 0xC9, 0xD1, 0xD2, 0xD3, -- arrows/navigation
+        0x1C, 0x0E, 0x0F,                                           -- enter/backspace/tab
+        0x3A, 0x45, 0x46,                                           -- locks
+        0x2A, 0x36, 0x1D, 0x9D, 0x38, 0xB8,                         -- modifiers
+        0x3B, 0x3C, 0x3D, 0x3E, 0x3F, 0x40, 0x41, 0x42, 0x43, 0x44, -- function keys
+        0x57, 0x58, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x71,       -- function keys
     }
     local _nonTextSet = {}
     for _, v in ipairs(_nonText) do if v then _nonTextSet[v] = true end end
@@ -235,7 +247,7 @@ end
 ---Prepare screen and draw box; returns a table with geometry and wrapped lines.
 ---@param title string
 ---@param text string
----@param opts table|nil
+---@param opts opts?
 ---@param defaultW number
 ---@param defaultH number
 ---@return table info
@@ -245,6 +257,7 @@ local function prep(title, text, opts, defaultW, defaultH)
     local h = opts.height or defaultH
     local bg = opts.bg or 0x222222
     local fg = opts.fg or 0xFFFFFF
+    local prefix = opts.prefix or "Input: "
     local x, y = center(w, h)
     local sw, sh = getResolution()
     clear()
@@ -269,6 +282,7 @@ local function prep(title, text, opts, defaultW, defaultH)
         innerW = innerW,
         innerH = innerH,
         lines = lines,
+        prefix = prefix,
     }
 end
 
@@ -281,7 +295,7 @@ end
 ---Show a message box and wait for Enter.
 ---@param title string
 ---@param text string
----@param opts table|nil {width:number, height:number, bg:number, fg:number}
+---@param opts opts?
 function whiptail.msgbox(title, text, opts)
     local info = prep(title, text, opts, 50, 10)
     drawTextBlock(info.innerX, info.innerY, info.innerW, info.innerH, info.lines)
@@ -293,7 +307,7 @@ end
 ---Show a yes/no dialog; returns true for yes, false for no.
 ---@param title string
 ---@param text string
----@param opts table|nil {width:number, height:number, bg:number, fg:number}
+---@param opts opts?
 ---@return boolean
 function whiptail.yesno(title, text, opts)
     local info = prep(title, text, opts, 50, 10)
@@ -316,18 +330,19 @@ end
 ---Prompt for text input; returns the entered string or nil.
 ---@param title string
 ---@param prompt string
----@param opts table|nil {width:number, height:number, bg:number, fg:number, default:string}
+---@param opts opts?
 ---@return string|nil
 function whiptail.inputbox(title, prompt, opts)
+    opts = opts or {}
     local info = prep(title, prompt, opts, 60, 10)
     drawTextBlock(info.innerX, info.innerY, info.innerW, info.innerH, info.lines)
-    gpu.set(info.innerX, info.y + info.h - 3, "Input: ")
+    gpu.set(info.innerX, info.y + info.h - 3, info.prefix or "Input: ")
     local readX = info.innerX + 8
     local readY = math.min(info.sh - 1, info.y + info.h - 3)
     gpu.setBackground(info.bg)
     gpu.setForeground(info.fg)
     local maxlen = math.max(1, info.innerW - 8)
-    local res = readLineAt(readX, readY, maxlen, info.bg, info.fg, opts and opts.default)
+    local res = readLineAt(readX, readY, maxlen, info.bg, info.fg, opts.default)
     cleanup()
     return res
 end
@@ -336,13 +351,16 @@ end
 ---@param title string
 ---@param prompt string
 ---@param choices string[]
----@param opts table|nil {width:number, height:number, bg:number, fg:number}
+---@param opts opts?
 ---@return number?|nil idx
 ---@return string?|nil value
 function whiptail.menu(title, prompt, choices, opts)
     -- choices: array of strings
     opts = opts or {}
-    local info = prep(title, prompt, opts, 60, (6 + #choices))
+    local desiredH = opts.height or (6 + #choices)
+    local sw, sh = getResolution()
+    if desiredH > sh then error("menu: too many options for screen height") end
+    local info = prep(title, prompt, opts, 60, desiredH)
     for i, v in ipairs(choices) do
         gpu.set(info.innerX, info.innerY + #info.lines + i, string.format("%d) %s", i, v))
     end
@@ -362,7 +380,7 @@ end
 ---@param title string
 ---@param prompt string
 ---@param choices string[]
----@param opts table|nil {width:number, height:number, bg:number, fg:number, sel_bg:number, sel_fg:number, selected:number}
+---@param opts opts?
 ---@return number?|nil idx
 ---@return string?|nil value
 function whiptail.navmenu(title, prompt, choices, opts)
@@ -387,14 +405,20 @@ function whiptail.navmenu(title, prompt, choices, opts)
     local selected = math.max(1, opts.selected or 1)
     local depth = 1
     if gpu.getDepth then depth = gpu.getDepth() end
+    -- determine visible window size (at most innerH, minimum 6 or half of dialog height)
+    local visible = math.min(innerH, math.max(6, math.floor(info.h / 2)))
+    visible = math.max(1, visible)
+    local top = 1
 
     local function render()
-        for i, v in ipairs(choices) do
-            local ly = innerY + #lines + i
+        local last = math.min(#choices, top + visible - 1)
+        for i = top, last do
+            local displayRow = i - top + 1
+            local ly = innerY + #lines + displayRow
             local idxStr = tostring(i)
             local idxLen = unicode.len(idxStr)
             local nameMax = math.max(0, innerW - idxLen - 1)
-            local name = v
+            local name = choices[i]
             if unicode.len(name) > nameMax then
                 name = unicode.sub(name, 1, math.max(0, nameMax - 1)) .. "…"
             end
@@ -406,7 +430,6 @@ function whiptail.navmenu(title, prompt, choices, opts)
                     gpu.setForeground(sel_fg)
                     gpu.set(innerX, ly, name)
                     gpu.set(innerX + innerW - idxLen, ly, idxStr)
-                    -- restore defaults for next lines
                     gpu.setForeground(fg)
                     gpu.setBackground(bg)
                 else
@@ -450,9 +473,19 @@ function whiptail.navmenu(title, prompt, choices, opts)
         if code then
             if code == keys.up then
                 selected = math.max(1, selected - 1)
+                if selected < top then top = selected end
                 render()
             elseif code == keys.down then
                 selected = math.min(#choices, selected + 1)
+                if selected > top + visible - 1 then top = selected - visible + 1 end
+                render()
+            elseif code == keys.pageUp then
+                selected = math.max(1, selected - visible)
+                top = math.max(1, top - visible)
+                render()
+            elseif code == keys.pageDown then
+                selected = math.min(#choices, selected + visible)
+                top = math.min(math.max(1, #choices - visible + 1), top + visible)
                 render()
             elseif code == keys.enter then
                 cleanup()
@@ -465,6 +498,6 @@ function whiptail.navmenu(title, prompt, choices, opts)
     end
 end
 
-whiptail._VERSION = "neoutils.whiptail 0.1"
+whiptail._VERSION = "0.1.0"
 
 return whiptail
