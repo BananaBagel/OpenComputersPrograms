@@ -275,6 +275,8 @@ function whiptail.yesno(title, text, opts)
     gpu.set(info.innerX, info.y + info.h - 3, "[Y]es / [N]o : ")
     local readX = info.innerX + 16
     local readY = math.min(info.sh - 1, info.y + info.h - 3)
+    gpu.setBackground(info.bg)
+    gpu.setForeground(info.fg)
     local ans = readLineAt(readX, readY, 1, info.bg, info.fg, "")
     local ok = false
     if ans and #ans > 0 then
@@ -296,6 +298,8 @@ function whiptail.inputbox(title, prompt, opts)
     gpu.set(info.innerX, info.y + info.h - 3, "Input: ")
     local readX = info.innerX + 8
     local readY = math.min(info.sh - 1, info.y + info.h - 3)
+    gpu.setBackground(info.bg)
+    gpu.setForeground(info.fg)
     local maxlen = math.max(1, info.innerW - 8)
     local res = readLineAt(readX, readY, maxlen, info.bg, info.fg, opts and opts.default)
     cleanup()
@@ -319,6 +323,8 @@ function whiptail.menu(title, prompt, choices, opts)
     gpu.set(info.innerX, info.y + info.h - 3, "Enter number: ")
     local readX = info.innerX + 14
     local readY = math.min(info.sh - 1, info.y + info.h - 3)
+    gpu.setBackground(info.bg)
+    gpu.setForeground(info.fg)
     local ans = readLineAt(readX, readY, 6, info.bg, info.fg, "")
     local idx = tonumber(ans)
     cleanup()
@@ -410,7 +416,7 @@ function whiptail.navmenu(title, prompt, choices, opts)
 
     while true do
         local name, a1, a2, a3 = event.pullFiltered(nil,
-            function(n, ...) return n == "key_down" or n == "key" or n == "key_up" end)
+            function(n, ...) return n == "key_down" end)
         local code
         if type(a3) == "number" then code = a3 end
         if not code and type(a2) == "number" then code = a2 end
