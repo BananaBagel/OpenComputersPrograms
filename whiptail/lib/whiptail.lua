@@ -14,6 +14,7 @@ local gpu = component.gpu
 ---@field default string?
 ---@field selected number?
 ---@field prefix string?
+---@field maxLines number?
 
 ---@class Whiptail
 ---@field _VERSION string
@@ -130,15 +131,17 @@ local function drawTextBlock(x, y, w, h, lines)
     end
 end
 
----Read a single-line input at given coordinates using event loop (avoids io.read scrolling).
+---Read an input at given coordinates using event loop (avoids io.read scrolling).
+---Supports multi-line visual wrapping and clipped view with ellipses.
 ---@param x number
 ---@param y number
----@param maxlen number
+---@param maxlen number  -- width in characters for each visual line
 ---@param bg number
 ---@param fg number
 ---@param default string|nil
+---@param maxLines number? -- number of visual lines to use before truncating (default 1)
 ---@return string
-local function readLineAt(x, y, maxlen, bg, fg, default)
+local function readLineAt(x, y, maxlen, bg, fg, default, maxLines)
     default = default or ""
     local event = require("event")
     local keyboard_mod = require("keyboard")
@@ -148,29 +151,81 @@ local function readLineAt(x, y, maxlen, bg, fg, default)
     for i = 1, unicode.len(default) do table.insert(buf, unicode.sub(default, i, i)) end
     local pos = #buf + 1
 
+    maxLines = maxLines or 1
     local function draw()
-        gpu.setBackground(bg)
-        gpu.fill(x, y, maxlen, 1, " ")
-        gpu.setForeground(fg)
         local s = table.concat(buf)
-        if unicode.len(s) > maxlen then
-            s = unicode.sub(s, 1, maxlen)
+        local total = unicode.len(s)
+        -- build wrapped lines (simple fixed-width wrap)
+        local lines = {}
+        if maxlen <= 0 then maxlen = 1 end
+        for i = 1, math.max(1, math.ceil(total / maxlen)) do
+            local st = (i - 1) * maxlen + 1
+            local en = math.min(total, i * maxlen)
+            table.insert(lines, unicode.sub(s, st, en))
         end
-        -- write visible text
-        gpu.set(x, y, s)
-        -- compute cursor cell (1-based within field)
-        local cursorCell = math.min(pos, maxlen)
-        local cx = x + cursorCell - 1
-        local ch = " "
-        if unicode.len(s) >= cursorCell then
-            ch = unicode.sub(s, cursorCell, cursorCell)
+        if #lines == 0 then lines = { "" } end
+
+        -- determine which block of lines to display so cursor is visible
+        local cursorIdx = math.max(0, pos - 1) -- 0-based index into chars
+        local cursorLine = math.floor(cursorIdx / maxlen) + 1
+        local totalLines = #lines
+        local topLine = 1
+        if totalLines <= maxLines then
+            topLine = 1
+        else
+            -- try to center cursor line within visible block when possible
+            topLine = math.max(1, math.min(cursorLine - math.floor(maxLines / 2), totalLines - maxLines + 1))
         end
-        -- draw simple block cursor by inverting colors at cursor position
-        gpu.setBackground(fg)
-        gpu.setForeground(bg)
-        gpu.set(cx, y, ch)
-        gpu.setForeground(fg)
-        gpu.setBackground(bg)
+
+        -- draw the visual area (maxLines rows)
+        for li = 1, maxLines do
+            local drawY = y + li - 1
+            gpu.setBackground(bg)
+            gpu.fill(x, drawY, maxlen, 1, " ")
+            gpu.setForeground(fg)
+            local sourceLine = topLine + li - 1
+            local textLine = ""
+            if sourceLine <= totalLines then textLine = lines[sourceLine] end
+            -- add ellipsis markers if clipped
+            if sourceLine == topLine and sourceLine > 1 then
+                -- indicate there's content above
+                if unicode.len(textLine) > 0 then
+                    textLine = "…" .. unicode.sub(textLine, 2)
+                else
+                    textLine = "…"
+                end
+            end
+            if sourceLine == topLine + maxLines - 1 and (topLine + maxLines - 1) < totalLines then
+                -- indicate there's content below
+                if unicode.len(textLine) > 0 then
+                    textLine = unicode.sub(textLine, 1, math.max(1, unicode.len(textLine) - 1)) .. "…"
+                else
+                    textLine = "…"
+                end
+            end
+            gpu.set(x, drawY, textLine)
+        end
+
+        -- draw cursor (invert colors at cursor position)
+        local cpos = math.max(0, pos - 1)
+        local cLine = math.floor(cpos / maxlen) + 1
+        local cCol = (cpos % maxlen) + 1
+        if cLine >= topLine and cLine < topLine + maxLines then
+            local cx = x + cCol - 1
+            local cy = y + (cLine - topLine)
+            local ch = " "
+            local lineIndex = cLine
+            local lineText = ""
+            if lineIndex <= #lines then lineText = lines[lineIndex] end
+            if unicode.len(lineText) >= cCol then
+                ch = unicode.sub(lineText, cCol, cCol)
+            end
+            gpu.setBackground(fg)
+            gpu.setForeground(bg)
+            gpu.set(cx, cy, ch)
+            gpu.setForeground(fg)
+            gpu.setBackground(bg)
+        end
     end
 
     -- flush any pending events so previous key presses don't immediately trigger actions
@@ -202,7 +257,7 @@ local function readLineAt(x, y, maxlen, bg, fg, default)
 
         if code == keys.enter or code == keys.numpadenter then
             break
-        elseif code == keys.backspace then
+        elseif code == keys.backspace or code == keys.back then
             if pos > 1 then
                 table.remove(buf, pos - 1)
                 pos = pos - 1
@@ -228,19 +283,15 @@ local function readLineAt(x, y, maxlen, bg, fg, default)
         else
             if type(charCode) == "number" and charCode >= 32 and isTextKey(code) then
                 local ch = unicode.char(charCode)
-                if unicode.len(table.concat(buf)) < maxlen then
-                    table.insert(buf, pos, ch)
-                    pos = pos + 1
-                end
+                table.insert(buf, pos, ch)
+                pos = pos + 1
                 draw()
             end
         end
     end
 
-    -- restore normal colors for the input line
-    gpu.setBackground(bg)
-    gpu.setForeground(fg)
-    gpu.set(x, y, unicode.sub(table.concat(buf), 1, maxlen))
+    -- finalize: render full visible area then return buffer
+    draw()
     return table.concat(buf)
 end
 
@@ -342,7 +393,8 @@ function whiptail.inputbox(title, prompt, opts)
     gpu.setBackground(info.bg)
     gpu.setForeground(info.fg)
     local maxlen = math.max(1, info.innerW - 8)
-    local res = readLineAt(readX, readY, maxlen, info.bg, info.fg, opts.default)
+    local maxLines = opts.maxLines or 1
+    local res = readLineAt(readX, readY, maxlen, info.bg, info.fg, opts.default, maxLines)
     cleanup()
     return res
 end
@@ -510,12 +562,14 @@ function whiptail.navmenu(title, prompt, choices, opts)
                 if selected > top + visible - 1 then top = selected - visible + 1 end
                 render()
             elseif code == keys.pageUp then
-                selected = math.max(1, selected - visible)
+                -- move viewport up by visible rows and place selection on the new top item
                 top = math.max(1, top - visible)
+                selected = top
                 render()
             elseif code == keys.pageDown then
-                selected = math.min(#choices, selected + visible)
-                top = math.min(math.max(1, #choices - visible + 1), top + visible)
+                -- move viewport down by visible rows and place selection on the new top item
+                top = math.min(#choices, top + visible)
+                selected = top
                 render()
             elseif code == keys.enter then
                 cleanup()
