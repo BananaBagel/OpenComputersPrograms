@@ -43,6 +43,17 @@ if cmd == "demo" then
     print("You typed:", inpt or "(none)")
     if idx then print("Menu selection:", idx, val) else print("Menu: no selection") end
     if nidx then print("NavMenu selection:", nidx, nval) else print("NavMenu: cancelled") end
+    -- now demonstrate forced text-mode versions of each dialog
+    print("\n-- Forced text-mode demo --")
+    whiptail.msgbox("Text Mode Msg", "This is forced text mode.", { forceTextMode = true })
+    local ok2 = whiptail.yesno("Text Mode YesNo", "Proceed in text mode?", { forceTextMode = true })
+    local inpt2 = whiptail.inputbox("Text Mode Input", "Enter text:", { forceTextMode = true, maxLines = 2 })
+    local idx2, val2 = whiptail.menu("Text Mode Menu", "Pick:", choices, { forceTextMode = true })
+    local nidx2, nval2 = whiptail.navmenu("Text Mode Nav", "Select (text mode):", choices, { forceTextMode = true })
+    print("Text-mode Yes/No:", ok2 and "yes" or "no")
+    print("Text-mode input:", inpt2 or "(none)")
+    if idx2 then print("Text-mode menu:", idx2, val2) else print("Text-mode menu: no selection") end
+    if nidx2 then print("Text-mode nav:", nidx2, nval2) else print("Text-mode nav: cancelled") end
     return
 end
 
