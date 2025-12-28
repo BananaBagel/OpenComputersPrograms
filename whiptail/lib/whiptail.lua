@@ -223,7 +223,9 @@ local function readLineAt(x, y, maxlen, bg, fg, default, maxLines, forceText, ma
     end
     local function draw()
         local s = table.concat(buf)
-        local lines = preserveWordWrap(s, maxlen)
+        local displayW = maxlen
+        if forceText and maxlen > 1 then displayW = maxlen - 1 end
+        local lines = preserveWordWrap(s, displayW)
         lastLines = lines
         local totalLines = #lines
 
@@ -256,11 +258,11 @@ local function readLineAt(x, y, maxlen, bg, fg, default, maxLines, forceText, ma
             local drawY = y + li - 1
             if not forceText then
                 gpu.setBackground(bg)
-                gpu.fill(x, drawY, maxlen, 1, " ")
+                gpu.fill(x, drawY, displayW, 1, " ")
             else
                 -- in text mode don't change background; clear by writing spaces
                 gpu.setForeground(fg)
-                gpu.set(x, drawY, string.rep(" ", math.max(0, maxlen)))
+                gpu.set(x, drawY, string.rep(" ", math.max(0, displayW)))
             end
             gpu.setForeground(fg)
             local sourceLine = topLine + li - 1
@@ -289,7 +291,9 @@ local function readLineAt(x, y, maxlen, bg, fg, default, maxLines, forceText, ma
         local cCol = cursorCol
         if cLine >= topLine and cLine < topLine + maxLines then
             -- clamp column to visible width to avoid drawing outside input area
-            local cColClamped = math.max(1, math.min(cCol, maxlen))
+            local maxCol = displayW
+            if forceText then maxCol = displayW + 1 end
+            local cColClamped = math.max(1, math.min(cCol, maxCol))
             local cx = x + cColClamped - 1
             local cy = y + (cLine - topLine)
             local ch = " "
@@ -464,7 +468,19 @@ function whiptail.msgbox(title, text, opts)
     term.setCursorBlink(false)
     term.setCursor(1, info.sh)
     gpu.set(info.innerX, info.y + info.h - 3, "[ Press Enter to continue ]")
-    local _ = io.read()
+    local event = require("event")
+    local keyboard_mod = require("keyboard")
+    local keys = keyboard_mod.keys
+    -- flush any pending events
+    while true do
+        local n = event.pull(0)
+        if not n then break end
+    end
+    while true do
+        local name, a1, a2, a3 = event.pullFiltered(nil, function(n, ...) return n == "key_down" end)
+        local code = a3
+        if code == keys.enter or code == keys.numpadenter then break end
+    end
     term.setCursorBlink(blinking)
     cleanup()
 end
