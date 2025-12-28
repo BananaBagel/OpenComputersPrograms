@@ -31,7 +31,7 @@ end
 if cmd == "demo" then
     whiptail.msgbox("Demo - Message", "This is a demo of simple whiptail dialogs.", { bg = 0x222244, fg = 0xFFFFFF })
     local ok = whiptail.yesno("Demo - Yes/No", "Do you like this demo?", { bg = 0x003366, fg = 0xFFFFFF })
-    local inpt = whiptail.inputbox("Demo - Input", "Type something:", { bg = 0x660000, fg = 0xFFFFFF })
+    local inpt = whiptail.inputbox("Demo - Input", "Type something:", { bg = 0x660000, fg = 0xFFFFFF, maxLines = 2 })
     local choices = { "First choice is long to demonstrate truncation because truncation is important", "Second", "Third",
         "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth" }
     local idx, val = whiptail.menu("Demo - Menu", "Pick one:", choices, { bg = 0x004400, fg = 0xFFFFFF })

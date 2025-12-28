@@ -537,6 +537,43 @@ function whiptail.navmenu(title, prompt, choices, opts)
         end
     end
 
+    -- helper: compute number of visual rows an item consumes (selected may expand)
+    local function rowsForItem(i)
+        local idxLen = unicode.len(tostring(i))
+        local nameMax = math.max(0, innerW - idxLen - 1)
+        if i == selected then
+            local parts = wrapText(choices[i], nameMax)
+            return math.max(1, #parts)
+        else
+            return 1
+        end
+    end
+
+    -- advance top downwards by upToRows visual rows (based on current selected expansion)
+    local function advanceTopByRowsDown(upToRows)
+        local acc = 0
+        local i = top
+        while i <= #choices and acc < upToRows do
+            acc = acc + rowsForItem(i)
+            i = i + 1
+        end
+        if i > #choices then
+            return #choices
+        end
+        return i
+    end
+
+    -- move top upwards by upToRows visual rows
+    local function advanceTopByRowsUp(upToRows)
+        local acc = 0
+        local i = top - 1
+        while i >= 1 and acc < upToRows do
+            acc = acc + rowsForItem(i)
+            i = i - 1
+        end
+        return math.max(1, i + 1)
+    end
+
     -- small drain loop to discard any leftover key events (helps when keys are held)
     for i = 1, 5 do
         local _ = event.pull(0.02)
@@ -562,13 +599,13 @@ function whiptail.navmenu(title, prompt, choices, opts)
                 if selected > top + visible - 1 then top = selected - visible + 1 end
                 render()
             elseif code == keys.pageUp then
-                -- move viewport up by visible rows and place selection on the new top item
-                top = math.max(1, top - visible)
+                local newTop = advanceTopByRowsUp(visible)
+                top = math.max(1, math.min(newTop, #choices))
                 selected = top
                 render()
             elseif code == keys.pageDown then
-                -- move viewport down by visible rows and place selection on the new top item
-                top = math.min(#choices, top + visible)
+                local newTop = advanceTopByRowsDown(visible)
+                top = math.max(1, math.min(newTop, #choices))
                 selected = top
                 render()
             elseif code == keys.enter then
