@@ -130,13 +130,16 @@ end
 local function readLineAt(x, y, maxlen, bg, fg, default)
     default = default or ""
     local event = require("event")
-    local keyboard_mod_ok, keyboard_mod = pcall(require, "keyboard")
-    local keys = keyboard_mod_ok and keyboard_mod.keys or {}
+    local keyboard_mod = require("keyboard")
+    local keys = keyboard_mod.keys
     local backspace_code = keys.backspace or 0x0E
     local enter_code = keys.enter or 0x1C
+    local left_code = keys.left or 0xCB
+    local right_code = keys.right or 0xCD
 
     local buf = {}
     for i = 1, unicode.len(default) do table.insert(buf, unicode.sub(default, i, i)) end
+    local pos = #buf + 1
 
     local function draw()
         gpu.setBackground(bg)
@@ -147,37 +150,59 @@ local function readLineAt(x, y, maxlen, bg, fg, default)
             s = unicode.sub(s, 1, maxlen)
         end
         gpu.set(x, y, s)
+        -- draw simple block cursor by inverting colors at cursor position
+        local cx = x + math.max(0, math.min(pos - 1, maxlen - 1))
+        local ch = " "
+        if pos <= #buf then ch = unicode.sub(table.concat(buf), pos, pos) end
+        gpu.setBackground(fg)
+        gpu.setForeground(bg)
+        gpu.set(cx, y, ch)
+        gpu.setForeground(fg)
+        gpu.setBackground(bg)
+    end
+
+    -- flush any pending events so previous key presses don't immediately trigger actions
+    while true do
+        local n = event.pull(0)
+        if not n then break end
     end
 
     draw()
     while true do
-        local name, a1, a2, a3 = event.pullFiltered(nil, function(n, ...) return n == "key_down" or n == "key" end)
-        local code
-        if type(a3) == "number" then code = a3 end
-        if not code and type(a2) == "number" then code = a2 end
-        if not code and type(a1) == "number" then code = a1 end
+        local ev, a1, a2, a3 = event.pullFiltered(nil, function(n, ...) return n == "key_down" end)
+        local charCode = a2
+        local code = a3
 
-        if code then
-            if code == enter_code then
-                break
-            elseif code == backspace_code then
-                if #buf > 0 then table.remove(buf) end
-                draw()
-            else
-                -- printable range: try to use a3/a2 as char code if present
-                local chcode = nil
-                if type(a3) == "number" and a3 >= 32 then chcode = a3 end
-                if not chcode and type(a2) == "number" and a2 >= 32 then chcode = a2 end
-                if chcode then
-                    local ch = unicode.char(chcode)
-                    if unicode.len(table.concat(buf)) < maxlen then
-                        table.insert(buf, ch)
-                    end
-                    draw()
+        if code == enter_code then
+            break
+        elseif code == backspace_code then
+            if pos > 1 then
+                table.remove(buf, pos - 1)
+                pos = pos - 1
+            end
+            draw()
+        elseif code == left_code then
+            pos = math.max(1, pos - 1)
+            draw()
+        elseif code == right_code then
+            pos = math.min(#buf + 1, pos + 1)
+            draw()
+        else
+            if type(charCode) == "number" and charCode >= 32 then
+                local ch = unicode.char(charCode)
+                if unicode.len(table.concat(buf)) < maxlen then
+                    table.insert(buf, pos, ch)
+                    pos = pos + 1
                 end
+                draw()
             end
         end
     end
+
+    -- restore normal colors for the input line
+    gpu.setBackground(bg)
+    gpu.setForeground(fg)
+    gpu.set(x, y, unicode.sub(table.concat(buf), 1, maxlen))
     return table.concat(buf)
 end
 
@@ -324,8 +349,8 @@ function whiptail.navmenu(title, prompt, choices, opts)
     local lines = info.lines
 
     local event = require("event")
-    local keyboard_mod_ok, keyboard_mod = pcall(require, "keyboard")
-    local keys = keyboard_mod_ok and keyboard_mod.keys or { up = 0xC8, down = 0xD0, enter = 0x1C, esc = 0x01 }
+    local keyboard_mod = require("keyboard")
+    local keys = keyboard_mod.keys
 
     local selected = math.max(1, opts.selected or 1)
     local depth = 1
@@ -375,6 +400,12 @@ function whiptail.navmenu(title, prompt, choices, opts)
         end
     end
 
+    -- flush any pending key events so previous presses don't trigger immediate selection
+    while true do
+        local n = event.pull(0)
+        if not n then break end
+    end
+
     render()
 
     while true do
@@ -398,11 +429,6 @@ function whiptail.navmenu(title, prompt, choices, opts)
             elseif code == (keys.esc or 0x01) then
                 cleanup()
                 return nil
-            end
-        else
-            if a2 == 13 or a3 == 13 then
-                cleanup()
-                return selected, choices[selected]
             end
         end
     end
