@@ -1,7 +1,6 @@
 local component = require("component")
 local term = require("term")
 local unicode = require("unicode")
-
 local gpu = component.gpu
 
 ---@class opts
@@ -141,10 +140,10 @@ end
 ---@param maxlen number  -- width in characters for each visual line
 ---@param bg number
 ---@param fg number
----@param default string|nil
+---@param default string?
 ---@param maxLines number? -- number of visual lines to use before truncating (default 1)
 ---@return string
-local function readLineAt(x, y, maxlen, bg, fg, default, maxLines, maxChars)
+local function readLineAt(x, y, maxlen, bg, fg, default, maxLines, forceText, maxChars)
     default = default or ""
     local event = require("event")
     local keyboard_mod = require("keyboard")
@@ -155,6 +154,7 @@ local function readLineAt(x, y, maxlen, bg, fg, default, maxLines, maxChars)
     local pos = #buf + 1
 
     maxLines = maxLines or 1
+    forceText = forceText or false
 
     -- word-wrap preserving all characters (spaces and punctuation)
     local function preserveWordWrap(s, width)
@@ -251,11 +251,17 @@ local function readLineAt(x, y, maxlen, bg, fg, default, maxLines, maxChars)
         end
         lastTopLine = topLine
 
-        -- draw visual area
+        -- draw the visual area
         for li = 1, maxLines do
             local drawY = y + li - 1
-            gpu.setBackground(bg)
-            gpu.fill(x, drawY, maxlen, 1, " ")
+            if not forceText then
+                gpu.setBackground(bg)
+                gpu.fill(x, drawY, maxlen, 1, " ")
+            else
+                -- in text mode don't change background; clear by writing spaces
+                gpu.setForeground(fg)
+                gpu.set(x, drawY, string.rep(" ", math.max(0, maxlen)))
+            end
             gpu.setForeground(fg)
             local sourceLine = topLine + li - 1
             local textLine = ""
@@ -282,18 +288,26 @@ local function readLineAt(x, y, maxlen, bg, fg, default, maxLines, maxChars)
         local cLine = cursorLine
         local cCol = cursorCol
         if cLine >= topLine and cLine < topLine + maxLines then
-            local cx = x + cCol - 1
+            -- clamp column to visible width to avoid drawing outside input area
+            local cColClamped = math.max(1, math.min(cCol, maxlen))
+            local cx = x + cColClamped - 1
             local cy = y + (cLine - topLine)
             local ch = " "
             local lineText = lines[cLine] or ""
-            if unicode.len(lineText) >= cCol then
-                ch = unicode.sub(lineText, cCol, cCol)
+            if unicode.len(lineText) >= cColClamped then
+                ch = unicode.sub(lineText, cColClamped, cColClamped)
             end
-            gpu.setBackground(fg)
-            gpu.setForeground(bg)
-            gpu.set(cx, cy, ch)
-            gpu.setForeground(fg)
-            gpu.setBackground(bg)
+            if not forceText then
+                gpu.setBackground(fg)
+                gpu.setForeground(bg)
+                gpu.set(cx, cy, ch)
+                gpu.setForeground(fg)
+                gpu.setBackground(bg)
+            else
+                -- text mode: draw a simple cursor marker (underscore) without changing background
+                gpu.setForeground(fg)
+                gpu.set(cx, cy, "_")
+            end
         end
     end
 
@@ -524,12 +538,14 @@ function whiptail.inputbox(title, prompt, opts)
     if not opts.forceTextMode and gpu.getDepth then depth = gpu.getDepth() end
     local inputBg = info.bg
     if depth and depth > 1 then inputBg = opts.input_bg or info.bg end
-    gpu.setBackground(inputBg)
+    if not opts.forceTextMode and depth and depth > 1 then
+        gpu.setBackground(inputBg)
+    end
     gpu.setForeground(info.fg)
     local maxlen = math.max(1, info.innerW - 8)
     local maxLines = opts.maxLines or 1
     local maxChars = opts.maxChars
-    local res = readLineAt(readX, readY, maxlen, inputBg, info.fg, opts.default, maxLines, maxChars)
+    local res = readLineAt(readX, readY, maxlen, inputBg, info.fg, opts.default, maxLines, opts.forceTextMode, maxChars)
     cleanup()
     return res
 end
@@ -569,7 +585,7 @@ function whiptail.menu(title, prompt, choices, opts)
     local readY = math.min(info.sh - 1, info.y + info.h - 3)
     gpu.setBackground(info.bg)
     gpu.setForeground(info.fg)
-    local ans = readLineAt(readX, readY, 6, info.bg, info.fg, "")
+    local ans = readLineAt(readX, readY, 6, info.bg, info.fg, "", 1, opts.forceTextMode, 6)
     local idx = tonumber(ans)
     cleanup()
     if idx and choices[idx] then return idx, choices[idx] end
@@ -604,7 +620,7 @@ function whiptail.navmenu(title, prompt, choices, opts)
 
     local selected = math.max(1, opts.selected or 1)
     local depth = 1
-    if gpu.getDepth then depth = gpu.getDepth() end
+    if not opts.forceTextMode and gpu.getDepth then depth = gpu.getDepth() end
     -- determine visible window size (at most innerH, minimum 6 or half of dialog height)
     local visible = math.min(innerH, math.max(6, math.floor(info.h / 2)))
     visible = math.max(1, visible)
@@ -672,47 +688,8 @@ function whiptail.navmenu(title, prompt, choices, opts)
         end
     end
 
-    -- helper: compute number of visual rows an item consumes (selected may expand)
-    local function rowsForItem(i)
-        local idxLen = unicode.len(tostring(i))
-        local nameMax = math.max(0, innerW - idxLen - 1)
-        if i == selected then
-            local parts = wrapText(choices[i], nameMax)
-            return math.max(1, #parts)
-        else
-            return 1
-        end
-    end
-
-    -- advance top downwards by upToRows visual rows (based on current selected expansion)
-    local function advanceTopByRowsDown(upToRows)
-        local acc = 0
-        local i = top
-        while i <= #choices and acc < upToRows do
-            acc = acc + rowsForItem(i)
-            i = i + 1
-        end
-        if i > #choices then
-            return #choices
-        end
-        return i
-    end
-
-    -- move top upwards by upToRows visual rows
-    local function advanceTopByRowsUp(upToRows)
-        local acc = 0
-        local i = top - 1
-        while i >= 1 and acc < upToRows do
-            acc = acc + rowsForItem(i)
-            i = i - 1
-        end
-        return math.max(1, i + 1)
-    end
-
     -- small drain loop to discard any leftover key events (helps when keys are held)
-    for i = 1, 5 do
-        local _ = event.pull(0.02)
-    end
+    os.sleep(0.05)
 
     render()
 

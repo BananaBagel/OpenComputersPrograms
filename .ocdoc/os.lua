@@ -1,5 +1,9 @@
 ---@meta
 
+--- Pauses execution for the specified number of seconds. Events are still processed.
+---@param seconds number Time to sleep (seconds)
+function os.sleep(seconds) end
+
 --- OpenComputers OS Library
 ---
 --- Provides operating system facilities, partially reimplemented for OpenOS.
