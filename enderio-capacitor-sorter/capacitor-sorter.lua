@@ -12,7 +12,7 @@ local ic = component.getPrimary("transposer")
 local isReady = false
 local isRunning = false
 
-local textgui = require("neoutils.textgui")
+local whiptail = require("whiptail")
 
 local doesOutputExist = false
 
@@ -26,13 +26,13 @@ for s = 0, #(sides) - 1, 1 do
     end
 
     local invName = ic.getInventoryName(s)
-    local invLabel = ic.getInventoryLabel(s)
+    local invLabel = ic.getInventoryName(s)
 
-    transposer[s + 1] = {
+    table.insert(transposer, {
         side = sides[s],
         invSize = invSize,
         invName = invName
-    }
+    })
     ::continue::
 end
 

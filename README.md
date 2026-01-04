@@ -41,18 +41,9 @@ This collection of random small utilities is used by a few of my programs for si
 
 #### Logging
 
-Install: $`oppm install neoutils-logging`
-
 Use: `require("neoutils.logging")`
 
 A simple library for logging to the console.
-
-#### Text GUI
-
-Install: $`oppm install neoutils-textgui`
-Use: `require("neoutils.textgui")`
-
-A potentionally complex library for making text-based GUIs in OpenComputers.
 
 ### Other Programs
 
@@ -67,3 +58,9 @@ Use: $`plastic`
 In use with an AE2 ME system, this powerful program can blah blah blah- it makes pneumaticcraft plastic. Okay?
 Put dye in a chest on top of a transposer, it'll output plastic to a chest (or some inventory) on a horizontal side of the transposer. The other sides have to have liquid plastic and a plastic mixer. A redstone controller has to be adjacent to the plastic mixer with the plastic mixer set to redstone selection mode.
 This program is a simple program that doesn't have much or really any customizability, I just made it to work with my setup.
+
+#### Whiptail
+
+Install: $`oppm install whiptail`
+Use: `require("whiptail")`
+A simple library for making text-based user interfaces in OpenComputers.

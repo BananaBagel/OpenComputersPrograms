@@ -38,6 +38,13 @@ function event.cancel(timerId) end
 ---@return ... Additional event arguments
 function event.pull(timeout, name, ...) end
 
+--- Waits for and returns the next available event from the queue, or waits until one becomes available.
+---@param name string? Event name pattern to filter for (optional)
+---@param ... any Additional argument filters (optional)
+---@return string|nil Event name, or nil if timed out
+---@return ... Additional event arguments
+function event.pull(name, ...) end
+
 --- Waits for and returns the next available event matching a filter function.
 ---@param timeout number? Maximum time to wait in seconds (optional)
 ---@param filter fun(name:string, ...):boolean? Filter function to determine if the event should be returned (optional)

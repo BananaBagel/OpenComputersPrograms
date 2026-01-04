@@ -20,7 +20,7 @@ function TransposerProxy.transferFluid(sourceSide, sinkSide, count) end
 ---@param sinkSide integer Side to push to
 ---@param count integer Number of items to transfer
 ---@param sourceSlot integer Source slot index
----@param sinkSlot integer Target slot index
+---@param sinkSlot? integer Target slot index
 ---@return number Number of items transferred
 function TransposerProxy.transferItem(sourceSide, sinkSide, count, sourceSlot, sinkSlot) end
 
@@ -92,7 +92,7 @@ function TransposerProxy.getTankLevel(side, tank) end
 
 --- Gets the capacity of a specific tank.
 ---@param side integer Tank side
----@param tank integer Tank index
+---@param tank? integer Tank index
 ---@return number Tank capacity in millibuckets
 function TransposerProxy.getTankCapacity(side, tank) end
 
